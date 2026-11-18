@@ -92,10 +92,17 @@ def main():
         raise SystemExit(f"no TV called {a.tv} in config.json")
     tv_cfg = tv_cfg or {}
     sky = tv_cfg.get("sky_hdmi")
-    if sky is not None and (not isinstance(sky, int) or isinstance(sky, bool) or not 1 <= sky <= 4):
-        raise SystemExit(f"{tv_cfg['id']}: sky_hdmi must be a port number from 1 to 4, or left out")
+    if sky is not None and sky != "auto" and (not isinstance(sky, int) or isinstance(sky, bool) or not 1 <= sky <= 4):
+        raise SystemExit(f"{tv_cfg['id']}: sky_hdmi must be a port number from 1 to 4, \"auto\", or left out")
+    sky_name = tv_cfg.get("sky_name")
+    if sky_name is not None and (not isinstance(sky_name, str) or not 0 < len(sky_name) <= 40):
+        raise SystemExit(f"{tv_cfg['id']}: sky_name must be a name of 1 to 40 characters, or left out")
+    # my-logos/local.sky.png replaces the Sky logo on that tile (for another box on HDMI)
+    if os.path.isfile(os.path.join(mine, "local.sky.png")):
+        shutil.copy(os.path.join(mine, "local.sky.png"), os.path.join(stage, "logo-sky.png"))
     key = a.key or config.PAIRING_KEY
-    settings = {"bridge": a.bridge.rstrip("/"), "tv": a.tv, "log": a.log_url.rstrip("/"), "sky_hdmi": sky, "key": key}
+    settings = {"bridge": a.bridge.rstrip("/"), "tv": a.tv, "log": a.log_url.rstrip("/"), "sky_hdmi": sky,
+                "sky_name": sky_name, "key": key}
     with open(os.path.join(stage, "settings.js"), "w") as f:
         f.write("window.COUCH_TIZEN = " + json.dumps(settings) + ";\n")
     table = {}
@@ -104,6 +111,19 @@ def main():
         if t:
             table[app["package"]] = {"id": app["id"], "name": app["name"], "ids": t["ids"],
                                      "app": t.get("app"), "logo": app["package"] in logos}
+    # A logo in my-logos named after a Tizen app id (fiZNCxMH9Y.Hotstar.png) for an app couch-tv
+    # does not know: the TV app matches it by that id and shows the TV's own name for it, or the
+    # name given in my-logos/names.json ({"WSRedi0001.WorkspaceRedi": "PC"}).
+    names_file = os.path.join(mine, "names.json")
+    names = {}
+    if os.path.isfile(names_file):
+        with open(names_file) as f:
+            names = json.load(f)
+    for name in (logos | set(names)) - set(table):
+        head = name.split(".")[0]
+        if name.count(".") == 1 and len(head) == 10 and head.isalnum():
+            table[name] = {"id": name, "name": names.get(name, ""), "ids": [], "app": name,
+                           "logo": name in logos}
     with open(os.path.join(stage, "tizen-apps.js"), "w") as f:
         f.write("window.COUCH_TIZEN_APPS = " + json.dumps(table, indent=1) + ";\n")
 

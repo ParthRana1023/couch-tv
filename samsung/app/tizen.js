@@ -56,6 +56,8 @@
   // A few store-installed extras are Samsung's own and stay hidden.
   var STORE = /^[A-Za-z0-9]{10}$/;
   var HIDE = /^(e-Manual|Security Center|Samsung Promotion|Smarthub Connection Test)$/i;
+  // Store apps the TV lists as hidden but shows on its own Apps row (Samsung TV Plus on a 2023 CU8000, India).
+  var UNHIDE = /\.tvplusstandalone$/;
   var byPkg = {}, shown = [];
   function sortOut() {
     byPkg = {}; shown = [];
@@ -65,14 +67,15 @@
       if (pkg && !byPkg[pkg]) {
         byPkg[pkg] = a;
         shown.push({ package: pkg, label: MAP[pkg].name || a.name });
-      } else if (!pkg && a.show && STORE.test(a.packageId || "") && !HIDE.test(a.name || "") && !byPkg[a.id]) {
+      } else if (!pkg && (a.show || UNHIDE.test(a.id)) && STORE.test(a.packageId || "") && !HIDE.test(a.name || "") && !byPkg[a.id]) {
         byPkg[a.id] = a;
         shown.push({ package: a.id, label: a.name });
       }
     });
-    if (SKY_PORT) shown.unshift({ package: SKY, label: "Sky" });
+    if (SKY_PORT) shown.unshift({ package: SKY, label: S.sky_name || "Sky" });
   }
-  var SKY = "local.sky", SKY_PORT = parseInt(S.sky_hdmi, 10) || 0, skyOn = false;
+  // "sky_hdmi": "auto" (-1) takes the first HDMI input the TV says has something plugged in.
+  var SKY = "local.sky", SKY_PORT = S.sky_hdmi === "auto" ? -1 : parseInt(S.sky_hdmi, 10) || 0, skyOn = false;
   sortOut();
   send("log", "apps on this TV: " + tizenApps.length + ", shown: " + shown.map(function (a) { return a.label; }).join(", "));
 
@@ -129,9 +132,9 @@
     try {
       tizen.systeminfo.getPropertyValue("VIDEOSOURCE", function (info) {
         var list = (info && info.connected) || [], src = null;
-        list.forEach(function (s) { if (s.type === "HDMI" && s.number === SKY_PORT) src = s; });
+        list.forEach(function (s) { if (!src && s.type === "HDMI" && (SKY_PORT < 0 || s.number === SKY_PORT)) src = s; });
         if (!src) {
-          failed("HDMI " + SKY_PORT + " not connected", "The TV lists: " +
+          failed("HDMI " + (SKY_PORT < 0 ? "" : SKY_PORT + " ") + "not connected", "The TV lists: " +
             (list.map(function (s) { return s.type + " " + s.number; }).join(", ") || "nothing"));
           return;
         }
